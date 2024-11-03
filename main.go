@@ -9,6 +9,10 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
+
+	"golang.org/x/text/encoding/unicode"
+	"golang.org/x/text/transform"
 
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -49,7 +53,7 @@ func main() {
 
 		var marketingName string
 		query := `SELECT marketing_name FROM devices WHERE retail_branding = ? AND model = ? LIMIT 1`
-		err := db.QueryRow(query, reqBody.RetailBranding, reqBody.Model).Scan(&marketingName)
+		err := db.QueryRow(query, strings.ToLower(reqBody.RetailBranding), strings.ToLower(reqBody.Model)).Scan(&marketingName)
 		if err != nil {
 			if err == sql.ErrNoRows {
 				http.Error(w, "Device not found", http.StatusNotFound)
@@ -73,7 +77,7 @@ func main() {
 		err := updateDevices(db)
 		if err != nil {
 			log.Printf("Failed to update devices: %v", err)
-			http.Error(w, "Failed to update devices", http.StatusInternalServerError)
+			http.Error(w, fmt.Sprintf("Failed to update devices: %v", err), http.StatusInternalServerError)
 			return
 		}
 
@@ -113,25 +117,66 @@ func updateDevices(db *sql.DB) error {
 	}
 	defer resp.Body.Close()
 
-	// Skip the first line (license information)
-	reader := bufio.NewReader(resp.Body)
-	_, err = reader.ReadString('\n') // skip license line
-	if err != nil {
-		return fmt.Errorf("failed to read license line: %v", err)
-	}
+	// Decode UTF-16 LE to UTF-8
+	unicodeReader := transform.NewReader(resp.Body, unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewDecoder())
 
 	// Read the CSV data
+	reader := bufio.NewReader(unicodeReader)
+
+	// Peek at the first character to check for a license line
+	firstLinePeek, err := reader.Peek(1)
+	if err != nil {
+		return fmt.Errorf("failed to peek the first byte: %v", err)
+	}
+
+	if firstLinePeek[0] == '#' {
+		// It's a license line, skip it
+		licenseLine, err := reader.ReadString('\n')
+		if err != nil {
+			return fmt.Errorf("failed to read license line: %v", err)
+		}
+		log.Printf("License line: %s", strings.TrimSpace(licenseLine))
+	}
+
 	csvReader := csv.NewReader(reader)
+	csvReader.LazyQuotes = true
+	csvReader.FieldsPerRecord = -1 // Allow variable number of fields per record
+
 	// Read the header line
 	header, err := csvReader.Read()
 	if err != nil {
 		return fmt.Errorf("failed to read CSV header: %v", err)
 	}
 
-	// Map header indices
+	// Print the header line for debugging
+	log.Printf("CSV Header: %v", header)
+
+	// Map header indices with trimming and case-insensitive matching
 	headerMap := make(map[string]int)
 	for i, h := range header {
-		headerMap[h] = i
+		trimmedHeader := strings.TrimSpace(h)
+		lowerHeader := strings.ToLower(trimmedHeader)
+		headerMap[lowerHeader] = i
+	}
+
+	// Expected header field names (in lowercase)
+	expectedFields := []string{"retail branding", "marketing name", "model"}
+
+	// Check if required headers are present
+	indices := make(map[string]int)
+	missingFields := []string{}
+	for _, fieldName := range expectedFields {
+		if index, ok := headerMap[fieldName]; ok {
+			indices[fieldName] = index
+		} else {
+			missingFields = append(missingFields, fieldName)
+		}
+	}
+
+	if len(missingFields) > 0 {
+		log.Printf("Required header fields not found: %v", missingFields)
+		log.Printf("Available header fields: %v", headerMap)
+		return fmt.Errorf("required header fields not found: %v", missingFields)
 	}
 
 	tx, err := db.Begin()
@@ -147,24 +192,32 @@ func updateDevices(db *sql.DB) error {
 	defer stmt.Close()
 
 	count := 0
+	recordNumber := 1 // Start at 1 because we've read the header
 	for {
 		record, err := csvReader.Read()
+		recordNumber++
 		if err == io.EOF {
 			break
 		}
 		if err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to read CSV record: %v", err)
+			log.Printf("Warning: Failed to read CSV record on line %d: %v", recordNumber, err)
+			continue // Skip this record and continue with the next
 		}
 
-		retailBranding := record[headerMap["Retail Branding"]]
-		marketingName := record[headerMap["Marketing Name"]]
-		model := record[headerMap["Model"]]
+		// Ensure required fields are present
+		if len(record) <= indices["retail branding"] || len(record) <= indices["marketing name"] || len(record) <= indices["model"] {
+			log.Printf("Warning: Record on line %d does not have required fields", recordNumber)
+			continue // Skip this record and continue with the next
+		}
+
+		retailBranding := strings.ToLower(record[indices["retail branding"]])
+		marketingName := record[indices["marketing name"]]
+		model := strings.ToLower(record[indices["model"]])
 
 		_, err = stmt.Exec(retailBranding, marketingName, model)
 		if err != nil {
-			tx.Rollback()
-			return fmt.Errorf("failed to execute statement: %v", err)
+			log.Printf("Warning: Failed to insert record on line %d: %v", recordNumber, err)
+			continue // Skip this record and continue with the next
 		}
 		count++
 	}

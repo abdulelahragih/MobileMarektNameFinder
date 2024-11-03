@@ -1,5 +1,10 @@
-# Use the official Go image as the build environment
-FROM golang:1.18-alpine AS builder
+FROM golang:1.23-alpine3.20 AS builder
+
+# Install build dependencies
+RUN apk add --no-cache gcc musl-dev
+
+# Enable CGO
+ENV CGO_ENABLED=1
 
 # Set the working directory
 WORKDIR /app
@@ -19,13 +24,14 @@ RUN go build -o main .
 # Use a minimal base image for production
 FROM alpine:latest
 
+# Install runtime dependencies
+RUN apk add --no-cache ca-certificates musl
+
 # Set the working directory
 WORKDIR /root/
 
 # Copy the built binary from the builder
 COPY --from=builder /app/main .
-COPY --from=builder /app/devices.db .
-COPY --from=builder /app/devices.sql .
 
 # Expose port 8089
 EXPOSE 8089
