@@ -1,4 +1,4 @@
-# Device Name Finder
+# Mobile Marketing Name Finder 
 
 This microservice helps you find the user-friendly name of Android devices based on the device's model and brand name.
 
@@ -6,8 +6,8 @@ This microservice helps you find the user-friendly name of Android devices based
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository_url>
-   cd <repository_directory>
+   git clone https://github.com/abdulelahragih/MobileMarketingNameFinder.git
+   cd MobileMarketingNameFinder
    ```
 
 2. **Run the service with Docker:**
@@ -20,7 +20,7 @@ This microservice helps you find the user-friendly name of Android devices based
 
 ## Database Initialization
 
-The microservice fetches devices data from an external CSV file and populates it into an SQLite database. This file is accessed automatically during startup or by sending an update request.
+The microservice fetches devices data from an external CSV file and populates it into an SQLite database.
 
 ## Endpoints
 
