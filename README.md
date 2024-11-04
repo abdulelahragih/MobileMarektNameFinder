@@ -1,6 +1,6 @@
 # Device Name Finder
 
-This microservice helps you find the user-friendly name of a device based on the device's model and brand name. It supports case-insensitive search and ensures that missing or empty fields are handled gracefully.
+This microservice helps you find the user-friendly name of Android devices based on the device's model and brand name.
 
 ## Setup
 
@@ -20,7 +20,7 @@ This microservice helps you find the user-friendly name of a device based on the
 
 ## Database Initialization
 
-The microservice fetches device data from an external CSV file and populates it into an SQLite database. This file is accessed automatically during startup or by sending an update request.
+The microservice fetches devices data from an external CSV file and populates it into an SQLite database. This file is accessed automatically during startup or by sending an update request.
 
 ## Endpoints
 
@@ -63,31 +63,3 @@ The microservice fetches device data from an external CSV file and populates it 
        Devices updated successfully
        ```
      - Error (500): If there is an issue updating the database.
-
-## How It Works
-
-1. **Database**: The service uses SQLite to store device information.
-2. **Case-Insensitive Search**: The `/get-device-name` endpoint performs a case-insensitive search to retrieve the marketing name of a device.
-3. **Missing Field Handling**: If any fields in the CSV file are empty, they are filled with a default value (`"Unknown"` or empty string) to ensure data consistency.
-
-## Example Usage
-
-After starting the service with Docker Compose, you can test it with `curl` or any HTTP client:
-
-```bash
-# Example: Get Device Name
-curl -X POST http://localhost:8089/get-device-name \
--H "Content-Type: application/json" \
--d '{
-      "retail_branding": "Samsung",
-      "model": "SM-G991B"
-    }'
-
-# Example: Update Devices Database
-curl -X POST http://localhost:8089/update-devices
-```
-
-## Notes
-
-- Ensure Docker is installed and running before executing `docker-compose up`.
-- The service is configured to run on port `8089` and can be accessed at `http://localhost:8089`.
